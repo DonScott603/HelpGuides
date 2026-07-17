@@ -16,6 +16,7 @@ namespace PsrClone
         {
             _s = settings;
             Text = "Settings";
+            AutoScaleMode = AutoScaleMode.None;
             FormBorderStyle = FormBorderStyle.FixedDialog;
             StartPosition = FormStartPosition.CenterParent;
             MaximizeBox = false;

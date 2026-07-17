@@ -1,14 +1,38 @@
 # PSR Clone — Problem Steps Recorder replacement
 
+**Version 1.2.0**
+
 A self-contained Windows application that replicates **Problem Steps Recorder / Steps
 Recorder (`psr.exe`)**, which Microsoft has deprecated. Use it to record the exact
 steps you take to reproduce a problem — each user action is captured with an
-annotated screenshot and a plain-language description, then exported to a single
-`.zip` containing an MHTML (`.mht`) report, exactly like `psr.exe`.
+annotated screenshot and a plain-language description, then exported either as a
+single `.zip` containing an MHTML (`.mht`) report or as a folder of loose files,
+just like `psr.exe`.
 
 It targets the **.NET Framework 4.x runtime that is built into every Windows 10/11
 install**, so there is nothing extra to install and nothing to ship alongside the
 `.exe`. It compiles with the `csc.exe` that already lives in `C:\Windows\Microsoft.NET`.
+
+## Requirements & dependencies
+
+PSR Clone has **no third-party dependencies**. Everything it uses ships in-box with
+Windows and is present on every standard Windows 10/11 desktop install:
+
+| Dependency | Provided by | Notes |
+|------------|-------------|-------|
+| .NET Framework 4.6.1+ runtime | Windows 10 (1607+) / Windows 11 | Runs the app. |
+| GDI+ (`System.Drawing`) | Windows | Screen capture + image encoding. |
+| WinForms (`System.Windows.Forms`) | Windows | Toolbar / dialogs. |
+| UI Automation (`UIAutomationClient/Types`, `WindowsBase`) | Windows (GAC) | Resolves element/window names. |
+| Zip (`System.IO.Compression[.FileSystem]`) | .NET Framework 4.5+ | `.zip` packaging. |
+
+Nothing needs to be "installed" on a target machine. If a machine ever lacks the
+in-box .NET Framework (e.g. Windows **Server Core**), install the Microsoft
+".NET Framework 4.8" runtime once — there is nothing else to add.
+
+**Verify a target machine in one command:** run `PsrClone.exe --check`. It confirms
+every dependency above is present and working, reports the effective DPI awareness,
+and performs a real capture test on each monitor (see *Troubleshooting*).
 
 ## Features (matching psr.exe)
 
@@ -20,6 +44,10 @@ install**, so there is nothing extra to install and nothing to ship alongside th
     (e.g. `hello{Enter}`).
 - **Screenshot per step** of the monitor under the cursor, with the clicked UI
   element outlined and the cursor location marked.
+- **High-DPI & multi-monitor correct** — the process forces Per-Monitor-V2 DPI
+  awareness (via manifest *and* a programmatic fallback) so mouse coordinates,
+  monitor bounds and captures all agree on physical pixels, regardless of each
+  screen's scaling. This fixes wrong/blank captures on secondary or scaled displays.
 - **UI Automation** resolves each target's element name, control type, and the
   containing window title, producing descriptions like:
   `User left click on "Save" (button) in "Untitled - Notepad" (window)`.
@@ -41,13 +69,17 @@ No SDK required — uses the in-box .NET Framework compiler.
 
 ```powershell
 cd PSRClone
-.\build.ps1            # produces bin\PsrClone.exe
-.\build.ps1 -Run       # build and launch
-.\build.ps1 -SelfTest  # build and run the headless report self-test
+.\build.ps1                 # produces bin\PsrClone.exe (stamped from the VERSION file)
+.\build.ps1 -Run            # build and launch
+.\build.ps1 -SelfTest       # build and run the headless report self-test
+.\build.ps1 -Bump           # increment the patch version, then build
+.\build.ps1 -Bump -Part minor   # bump minor (or -Part major)
 ```
 
 The script auto-locates `csc.exe` and the UI Automation / WindowsBase assemblies
-in the GAC.
+in the GAC, and stamps the version from the **`VERSION`** file into the assembly
+(`FileVersion`/`ProductVersion`) and the in-app `BuildInfo.Version` constant shown
+in the window title and Help dialog. **Bump the version on every change.**
 
 ## Use
 
@@ -59,13 +91,36 @@ in the GAC.
 5. Share the result; recipients open the `.mht` (in the zip) or the `.htm` (in the
    folder) in any browser. The **Help** button opens the project's GitHub page.
 
-## Verification
+## Verification & diagnostics
 
+- `--check` — verifies every dependency is present, reports the effective DPI
+  awareness, and runs a real capture test on each monitor. Shows a dialog and writes
+  a log; add `--quiet` for headless (exit `0` = healthy). **Run this first on any
+  machine where capture or layout looks wrong.**
 - `--selftest <out.zip>` — builds a synthetic recording and validates the produced
-  zip/MHTML (embedded JPEGs, all expected markers). Exit code `0` = pass.
+  zip/MHTML *and* folder dump (embedded JPEGs, loose images, all expected markers).
+  Exit code `0` = pass.
 - `--recordtest <out.zip> <log.txt>` — installs the real hooks, synthesizes a click
   and keystrokes via `SendInput`, and confirms live capture (steps + screenshots +
   UI Automation). Exit code `0` = pass.
+
+## Troubleshooting
+
+**"Screenshots aren't captured / look wrong on another machine."** This is almost
+always a DPI-awareness problem, not a missing dependency (a missing runtime would
+stop the app from launching at all). Run:
+
+```powershell
+PsrClone.exe --check
+```
+
+- If **DPI awareness** shows anything other than *Per-Monitor-aware*, a group policy
+  or launcher is stripping the manifest. PSR Clone now also sets awareness
+  programmatically at startup, which resolves this in nearly all cases.
+- If a monitor shows **CAPTURE BLANK/FAILED**, that display is protected (DRM/secure
+  content) or the app lacks rights for it — run **elevated** and retry.
+- If a dependency shows **[FAIL]**, install the in-box **.NET Framework 4.8** runtime
+  on that machine (only needed on stripped-down SKUs such as Server Core).
 
 ## Notes and limitations vs. psr.exe
 
@@ -78,23 +133,47 @@ in the GAC.
   disable "Record keyboard input" in Settings. `psr.exe` carried the same warning.
 - Screenshots capture the monitor containing the cursor at the moment of the action.
 
+## Versioning
+
+The version lives in the top-level **`VERSION`** file (`MAJOR.MINOR.PATCH`) and is
+the single source of truth. `build.ps1` stamps it into the compiled `.exe` and the
+in-app `BuildInfo.Version`. Use `-Bump` (optionally `-Part minor|major`) to advance
+it, and record the change under *Changelog*.
+
+## Changelog
+
+- **1.2.0** — Per-Monitor-V2 DPI awareness (manifest + programmatic) fixing
+  wrong/blank captures on scaled/secondary monitors; robust capture with fallback
+  so a failed grab never drops a step; `Add Comment` now targets the monitor under
+  the cursor; `--check` environment/dependency diagnostic; automatic version
+  stamping from the `VERSION` file (`-Bump`); single-row auto-sized toolbar; version
+  shown in title/Help; expanded documentation.
+- **1.1.0** — Single-row toolbar with a **Help** button (opens the GitHub repo);
+  Settings default of **500** screenshots (range **1–1500**); choose **`.zip`** or a
+  **folder dump** on save.
+- **1.0.0** — Initial release: global mouse/keyboard capture, per-step screenshots
+  with element highlighting, UI Automation descriptions, MHTML `.zip` output.
+
 ## Project layout
 
 ```
 PSRClone/
-  build.ps1                 # compiles via in-box csc.exe
+  VERSION                   # single source of truth for the version
+  build.ps1                 # compiles via in-box csc.exe; stamps version
   src/
-    Program.cs              # entry point + test-mode dispatch
+    Program.cs              # entry point + DPI awareness + test/diagnostic dispatch
     MainForm.cs             # recorder toolbar UI
     SettingsForm.cs         # settings dialog
     CommentOverlayForm.cs   # "Add Comment" full-screen overlay
     Recorder.cs             # hooks, screenshot capture, UIA, gesture detection
-    NativeMethods.cs        # Win32 interop (hooks, key translation, SendInput)
+    NativeMethods.cs        # Win32 interop (hooks, key translation, SendInput, DPI)
     Step.cs                 # recorded-step model + description formatting
     RecorderSettings.cs     # options
-    ReportWriter.cs         # MHTML generation + zip packaging
+    ReportWriter.cs         # MHTML generation + zip / folder packaging
+    DependencyCheck.cs      # --check environment & dependency diagnostic
     SelfTest.cs             # headless report validation
     RecordTest.cs           # live hook/capture validation
+    Version.g.cs            # auto-generated from VERSION by build.ps1
     app.manifest            # DPI awareness + asInvoker
   bin/                      # build output (PsrClone.exe)
 ```

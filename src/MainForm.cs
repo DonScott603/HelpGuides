@@ -23,7 +23,8 @@ namespace PsrClone
 
         public MainForm()
         {
-            Text = "Steps Recorder (PSR Clone)";
+            Text = "Steps Recorder (PSR Clone) v" + BuildInfo.Version;
+            AutoScaleMode = AutoScaleMode.None;
             FormBorderStyle = FormBorderStyle.FixedToolWindow;
             StartPosition = FormStartPosition.Manual;
             TopMost = true;
@@ -234,7 +235,7 @@ namespace PsrClone
             catch (Exception ex)
             {
                 MessageBox.Show(this,
-                    "PSR Clone \u2014 a Problem Steps Recorder replacement.\n\n" +
+                    "PSR Clone v" + BuildInfo.Version + " \u2014 a Problem Steps Recorder replacement.\n\n" +
                     "Project & documentation:\n" + RepoUrl + "\n\n(" + ex.Message + ")",
                     "Help", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }

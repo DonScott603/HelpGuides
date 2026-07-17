@@ -468,14 +468,42 @@ namespace PsrClone
         /// <summary>Captures the monitor that contains the given screen point.</summary>
         public static Bitmap CaptureMonitor(Point screenPoint, out Rectangle monitorBounds)
         {
-            Screen scr = Screen.FromPoint(screenPoint);
-            monitorBounds = scr.Bounds;
-            var bmp = new Bitmap(monitorBounds.Width, monitorBounds.Height, PixelFormat.Format24bppRgb);
-            using (var g = Graphics.FromImage(bmp))
+            Rectangle bounds;
+            try
             {
-                g.CopyFromScreen(monitorBounds.X, monitorBounds.Y, 0, 0, monitorBounds.Size, CopyPixelOperation.SourceCopy);
+                Screen scr = Screen.FromPoint(screenPoint);
+                bounds = scr.Bounds;
             }
-            return bmp;
+            catch
+            {
+                bounds = Screen.PrimaryScreen != null ? Screen.PrimaryScreen.Bounds
+                                                      : SystemInformation.VirtualScreen;
+            }
+            if (bounds.Width <= 0 || bounds.Height <= 0)
+                bounds = SystemInformation.VirtualScreen;
+
+            monitorBounds = bounds;
+            try
+            {
+                var bmp = new Bitmap(bounds.Width, bounds.Height, PixelFormat.Format24bppRgb);
+                using (var g = Graphics.FromImage(bmp))
+                {
+                    g.CopyFromScreen(bounds.X, bounds.Y, 0, 0, bounds.Size, CopyPixelOperation.SourceCopy);
+                }
+                return bmp;
+            }
+            catch
+            {
+                // Never let a capture failure abort step recording; return a blank
+                // placeholder so the step (and its description) is still recorded.
+                try
+                {
+                    var ph = new Bitmap(Math.Max(1, bounds.Width), Math.Max(1, bounds.Height), PixelFormat.Format24bppRgb);
+                    using (var g = Graphics.FromImage(ph)) g.Clear(Color.FromArgb(32, 32, 32));
+                    return ph;
+                }
+                catch { return null; }
+            }
         }
 
         public void Dispose()

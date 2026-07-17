@@ -150,6 +150,36 @@ namespace PsrClone
         [return: MarshalAs(UnmanagedType.Bool)]
         public static extern bool SetCursorPos(int x, int y);
 
+        // ---- DPI awareness (belt-and-suspenders in case the manifest is stripped) ----
+        [DllImport("user32.dll")]
+        private static extern bool SetProcessDpiAwarenessContext(IntPtr value);
+
+        [DllImport("shcore.dll")]
+        private static extern int SetProcessDpiAwareness(int value); // 2 = PROCESS_PER_MONITOR_DPI_AWARE
+
+        [DllImport("user32.dll")]
+        private static extern bool SetProcessDPIAware();
+
+        private static readonly IntPtr DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 = new IntPtr(-4);
+
+        /// <summary>
+        /// Forces the best available process DPI awareness so that mouse-hook
+        /// coordinates, <see cref="System.Windows.Forms.Screen"/> bounds and
+        /// screen captures all agree on physical pixels across differently-scaled
+        /// monitors. Must be called before any window is created. If the manifest
+        /// already set awareness these calls fail harmlessly.
+        /// </summary>
+        public static string EnableBestDpiAwareness()
+        {
+            try { if (SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2)) return "PerMonitorV2 (context)"; }
+            catch { }
+            try { if (SetProcessDpiAwareness(2) == 0) return "PerMonitor (shcore)"; }
+            catch { }
+            try { if (SetProcessDPIAware()) return "System (legacy)"; }
+            catch { }
+            return "already set (manifest) or unavailable";
+        }
+
         /// <summary>Returns the top-level window title for a given point on screen.</summary>
         public static string GetTopWindowTitle(int x, int y, out uint processId)
         {

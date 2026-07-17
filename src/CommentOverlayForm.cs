@@ -28,11 +28,12 @@ namespace PsrClone
 
         public CommentOverlayForm()
         {
-            _screen = Screen.PrimaryScreen.Bounds;
+            _screen = Screen.FromPoint(Cursor.Position).Bounds;
             _clean = new Bitmap(_screen.Width, _screen.Height);
             using (var g = Graphics.FromImage(_clean))
                 g.CopyFromScreen(_screen.X, _screen.Y, 0, 0, _screen.Size, CopyPixelOperation.SourceCopy);
 
+            AutoScaleMode = AutoScaleMode.None;
             FormBorderStyle = FormBorderStyle.None;
             StartPosition = FormStartPosition.Manual;
             Bounds = _screen;
