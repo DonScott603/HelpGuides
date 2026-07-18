@@ -4,33 +4,28 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using System.IO;
-using System.IO.Compression;
 using System.Text;
 
 namespace PsrClone
 {
     /// <summary>
-    /// Renders recorded steps into a standalone MHTML (.mht) document.
-    /// (ZIP packaging removed to avoid browser/image-resolution issues.)
+    /// Writes a standalone MHTML (.mht) document with embedded screenshots.
+    /// (ZIP packaging removed.)
     /// </summary>
     public static class ReportWriter
     {
         private const string Boundary = "----=_NextPart_PSRClone_Recording";
 
-        // Keep the old method name so existing call sites still compile:
-        // Treat the passed-in path as the desired "base" output, but write ONLY an .mht file.
-        // Example: Save("C:\\temp\\recording.zip", ...) -> writes "C:\\temp\\recording.mht"
-        public static void Save(string zipPath, IList<RecordedStep> steps, DateTime started, DateTime stopped)
+        // Keep method name for compatibility, but STOP writing ZIP.
+        // We interpret zipPath as a "base" and write zipPath with .mht extension.
+        public static string Save(string zipPath, IList<RecordedStep> steps, DateTime started, DateTime stopped)
         {
             string mhtPath = Path.ChangeExtension(zipPath, ".mht");
             SaveMhtFile(mhtPath, steps, started, stopped);
+            return mhtPath;
         }
 
-        /// <summary>
-        /// Writes ONLY a standalone .mht file (no zip, no multipart packaging container on disk).
-        /// Returns the written path.
-        /// </summary>
-        public static string SaveMhtFile(string mhtPath, IList<RecordedStep> steps, DateTime started, DateTime stopped)
+        public static void SaveMhtFile(string mhtPath, IList<RecordedStep> steps, DateTime started, DateTime stopped)
         {
             string mht = BuildMht(steps, started, stopped);
 
@@ -38,25 +33,24 @@ namespace PsrClone
             if (!string.IsNullOrEmpty(dir))
                 Directory.CreateDirectory(dir);
 
-            // Write as UTF-8 without BOM (matches your previous approach).
             File.WriteAllText(mhtPath, mht, new UTF8Encoding(false));
-            return mhtPath;
         }
 
-        /// <summary>Optionally save the raw .mht (kept for API compatibility).</summary>
+        // Backwards compatible alias — rewritten for C# 5 compatibility
         public static void SaveMht(string mhtPath, IList<RecordedStep> steps, DateTime started, DateTime stopped)
         {
             SaveMhtFile(mhtPath, steps, started, stopped);
         }
 
         /// <summary>
-        /// Dumps a browsable report as loose files into <paramref name="dir"/>: a single
-        /// HTML file plus one JPEG per screenshot (no zip / no MHTML packaging).
+        /// Dumps a browsable report as loose files into <paramref name="dir"/>:
+        /// a single HTML file plus one JPEG per screenshot (no zip / no MHTML).
         /// Returns the path to the generated HTML file.
         /// </summary>
         public static string SaveFolder(string dir, IList<RecordedStep> steps, DateTime started, DateTime stopped)
         {
             Directory.CreateDirectory(dir);
+
             var images = new List<string>();
             var imageData = new List<byte[]>();
             string html = BuildHtml(steps, started, stopped, images, imageData);
@@ -66,15 +60,42 @@ namespace PsrClone
 
             string htmlPath = Path.Combine(dir,
                 "RecordedSteps_" + started.ToString("yyyyMMdd_HHmmss") + ".htm");
+
             File.WriteAllText(htmlPath, html, new UTF8Encoding(false));
             return htmlPath;
         }
 
+        /// <summary>
+        /// Opens Windows Explorer showing the folder that contains the specified file.
+        /// This avoids launching the default browser to view the .mht.
+        /// </summary>
+        public static void ShowFolderContainingFile(string filePath)
+        {
+            if (string.IsNullOrWhiteSpace(filePath)) return;
+            string full = Path.GetFullPath(filePath);
+            string folder = Path.GetDirectoryName(full);
+            if (string.IsNullOrEmpty(folder)) return;
+
+            System.Diagnostics.Process.Start("explorer.exe",
+                "/select,\"" + full.Replace("\"", "") + "\"");
+        }
+
+        /// <summary>
+        /// Opens the file with the default associated app (browser for .mht, etc).
+        /// </summary>
+        public static void OpenFile(string filePath)
+        {
+            if (string.IsNullOrWhiteSpace(filePath)) return;
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = filePath,
+                UseShellExecute = true
+            });
+        }
+
         private static string BuildMht(IList<RecordedStep> steps, DateTime started, DateTime stopped)
         {
-            // We will reference images by CID and provide Content-ID for each image part.
-            // This is the most common way for browsers to resolve images inside MHT.
-            var images = new List<string>();     // content-ids (e.g. "screenshot1.jpeg")
+            var images = new List<string>();
             var imageData = new List<byte[]>();
 
             string html = BuildHtml(steps, started, stopped, images, imageData);
@@ -88,42 +109,25 @@ namespace PsrClone
             sb.Append("Content-Type: multipart/related;\r\n");
             sb.Append("\ttype=\"text/html\";\r\n");
             sb.Append("\tboundary=\"").Append(Boundary).Append("\"\r\n");
-
-            // This helps some browsers interpret the container correctly.
-            sb.Append(";\r\n");
-            sb.Append("\tstart=\"<text.html>\"\r\n");
-
             sb.Append("X-Generator: PSR Clone\r\n");
             sb.Append("\r\n");
             sb.Append("This is a multi-part message in MIME format.\r\n\r\n");
 
-            // HTML part
             sb.Append("--").Append(Boundary).Append("\r\n");
             sb.Append("Content-Type: text/html; charset=\"utf-8\"\r\n");
             sb.Append("Content-Transfer-Encoding: quoted-printable\r\n");
-
-            // Add Content-ID so start= and cid can work more reliably.
             sb.Append("Content-ID: <text.html>\r\n");
-            sb.Append("Content-Location: file:///C:/Recording.htm\r\n");
             sb.Append("\r\n");
-
             sb.Append(QuotedPrintable.Encode(html));
             sb.Append("\r\n");
 
-            // Image parts
             for (int i = 0; i < images.Count; i++)
             {
                 sb.Append("--").Append(Boundary).Append("\r\n");
                 sb.Append("Content-Type: image/jpeg\r\n");
                 sb.Append("Content-Transfer-Encoding: base64\r\n");
-
-                // Key: set Content-ID for each image part.
                 sb.Append("Content-ID: <").Append(images[i]).Append(">\r\n");
-
-                // Content-Location is optional when using cid:, but keep for compatibility.
-                sb.Append("Content-Location: file:///C:/").Append(images[i]).Append("\r\n");
                 sb.Append("\r\n");
-
                 sb.Append(ToBase64Lines(imageData[i]));
                 sb.Append("\r\n");
             }
@@ -140,6 +144,7 @@ namespace PsrClone
             List<byte[]> imageData)
         {
             var sb = new StringBuilder();
+
             sb.Append("<!DOCTYPE html><html><head><meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\">");
             sb.Append("<title>Recorded Problem Steps</title>");
             sb.Append("<style>");
@@ -152,53 +157,53 @@ namespace PsrClone
             sb.Append("</style></head><body>");
 
             sb.Append("<h1>Recorded Problem Steps</h1>");
-            sb.Append("<p class=\"intro\">This file contains all of the recorded problem steps and information ")
-              .Append("captured to help describe your recorded steps.</p>");
+            sb.Append("<p class=\"intro\">This file contains all of the recorded problem steps and information captured to help describe your recorded steps.</p>");
             sb.Append("<p class=\"meta\">Recording session: ")
               .Append(Html(started.ToString("F"))).Append(" &ndash; ")
               .Append(Html(stopped == DateTime.MinValue ? DateTime.Now.ToString("F") : stopped.ToString("F")))
               .Append("</p>");
 
             sb.Append("<h2>Steps</h2>");
+
+            int shotCounter = 0;
             if (steps.Count == 0)
             {
                 sb.Append("<p><i>No steps were recorded.</i></p>");
             }
-
-            int shotCounter = 0;
-            foreach (var step in steps)
+            else
             {
-                sb.Append("<div class=\"step\">");
-                string prefix = "Step " + step.Index + ": ";
-
-                sb.Append("<div class=\"stephdr\">")
-                  .Append(step.Kind == StepKind.Comment ? "<span class=\"comment\">" : "<span>")
-                  .Append(Html(prefix))
-                  .Append("(").Append(Html(step.Time.ToString("g"))).Append(") ")
-                  .Append(Html(step.BuildDescription()))
-                  .Append("</span></div>");
-
-                if (step.Screenshot != null)
+                foreach (var step in steps)
                 {
-                    byte[] jpg = RenderAnnotated(step);
-                    string cid = "screenshot" + (++shotCounter) + ".jpeg";
+                    sb.Append("<div class=\"step\">");
 
-                    images.Add(cid);
-                    imageData.Add(jpg);
+                    string prefix = "Step " + step.Index + ": ";
+                    sb.Append("<div class=\"stephdr\">")
+                      .Append(step.Kind == StepKind.Comment ? "<span class=\"comment\">" : "<span>")
+                      .Append(Html(prefix))
+                      .Append("(").Append(Html(step.Time.ToString("g"))).Append(") ")
+                      .Append(Html(step.BuildDescription()))
+                      .Append("</span></div>");
 
-                    // Key: use cid: scheme in HTML
-                    sb.Append("<img class=\"shot\" src=\"cid:")
-                      .Append(cid)
-                      .Append("\" alt=\"Step ")
-                      .Append(step.Index)
-                      .Append("\">");
+                    if (step.Screenshot != null)
+                    {
+                        byte[] jpg = RenderAnnotated(step);
+                        string cid = "screenshot" + (++shotCounter) + ".jpeg";
+
+                        images.Add(cid);
+                        imageData.Add(jpg);
+
+                        sb.Append("<img class=\"shot\" src=\"cid:")
+                          .Append(cid)
+                          .Append("\" alt=\"Step ")
+                          .Append(step.Index)
+                          .Append("\">");
+                    }
+
+                    sb.Append("</div>");
                 }
-
-                sb.Append("</div>");
             }
 
-            sb.Append("<h2>Additional Details</h2>");
-            sb.Append("<div class=\"details\">");
+            sb.Append("<h2>Additional Details</h2><div class=\"details\">");
             sb.Append("<p>The following section lists each recorded step as text.</p>");
 
             foreach (var step in steps)
@@ -233,38 +238,35 @@ namespace PsrClone
             sb.Append("<tr><td><b>").Append(Html(k)).Append("</b></td><td>").Append(Html(v)).Append("</td></tr>");
         }
 
-        /// <summary>Draws the element highlight and cursor marker onto a copy of the screenshot.</summary>
         private static byte[] RenderAnnotated(RecordedStep step)
         {
             using (var bmp = new Bitmap(step.Screenshot))
+            using (var g = Graphics.FromImage(bmp))
             {
-                using (var g = Graphics.FromImage(bmp))
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+
+                if (step.Highlight != Rectangle.Empty && step.Highlight.Width > 0 && step.Highlight.Height > 0)
                 {
-                    g.SmoothingMode = SmoothingMode.AntiAlias;
+                    var rect = step.Highlight;
+                    rect.Inflate(2, 2);
 
-                    if (step.Highlight != Rectangle.Empty && step.Highlight.Width > 0 && step.Highlight.Height > 0)
-                    {
-                        var rect = step.Highlight;
-                        rect.Inflate(2, 2);
+                    using (var pen = new Pen(Color.FromArgb(255, 0, 120, 215), 3f))
+                        g.DrawRectangle(pen, rect);
 
-                        using (var pen = new Pen(Color.FromArgb(255, 0, 120, 215), 3f))
-                            g.DrawRectangle(pen, rect);
+                    using (var glow = new Pen(Color.FromArgb(90, 0, 120, 215), 7f))
+                        g.DrawRectangle(glow, rect);
+                }
 
-                        using (var glow = new Pen(Color.FromArgb(90, 0, 120, 215), 7f))
-                            g.DrawRectangle(glow, rect);
-                    }
+                if (step.Kind != StepKind.Comment && step.Cursor != Point.Empty)
+                {
+                    int r = 14;
+                    var c = step.Cursor;
 
-                    if (step.Kind != StepKind.Comment && step.Cursor != Point.Empty)
-                    {
-                        int r = 14;
-                        var c = step.Cursor;
+                    using (var b = new SolidBrush(Color.FromArgb(70, 255, 210, 0)))
+                        g.FillEllipse(b, c.X - r, c.Y - r, r * 2, r * 2);
 
-                        using (var b = new SolidBrush(Color.FromArgb(70, 255, 210, 0)))
-                            g.FillEllipse(b, c.X - r, c.Y - r, r * 2, r * 2);
-
-                        using (var pen = new Pen(Color.FromArgb(220, 230, 140, 0), 2f))
-                            g.DrawEllipse(pen, c.X - r, c.Y - r, r * 2, r * 2);
-                    }
+                    using (var pen = new Pen(Color.FromArgb(220, 230, 140, 0), 2f))
+                        g.DrawEllipse(pen, c.X - r, c.Y - r, r * 2, r * 2);
                 }
 
                 return ToJpeg(bmp, 82L);
@@ -294,13 +296,14 @@ namespace PsrClone
         private static string ToBase64Lines(byte[] data)
         {
             string b64 = Convert.ToBase64String(data);
-
             var sb = new StringBuilder(b64.Length + b64.Length / 76 + 8);
+
             for (int i = 0; i < b64.Length; i += 76)
             {
                 sb.Append(b64, i, Math.Min(76, b64.Length - i));
                 sb.Append("\r\n");
             }
+
             return sb.ToString();
         }
 
@@ -337,13 +340,12 @@ namespace PsrClone
                 foreach (var s in System.Windows.Forms.Screen.AllScreens)
                     parts.Add(s.Bounds.Width + "x" + s.Bounds.Height);
 
-                return string.Join(", ", parts.ToArray());
+                return string.Join(", ", parts);
             }
             catch { return ""; }
         }
     }
 
-    /// <summary>Minimal quoted-printable encoder for the HTML MIME part.</summary>
     internal static class QuotedPrintable
     {
         public static string Encode(string input)
@@ -365,9 +367,7 @@ namespace PsrClone
 
                 if (b == (byte)'\r') continue;
 
-                string chunk;
-                if (literal) chunk = ((char)b).ToString();
-                else chunk = "=" + b.ToString("X2");
+                string chunk = literal ? ((char)b).ToString() : "=" + b.ToString("X2");
 
                 if (lineLen + chunk.Length > 74)
                 {
