@@ -164,7 +164,7 @@ namespace PsrClone
             // Ask the user how they want the report saved.
             var choice = MessageBox.Show(this,
                 "How would you like to save the recording?\n\n" +
-                "Yes = single .zip file (portable)\n" +
+                "Yes = single .mht file (portable)\n" +
                 "No = dump loose files into a folder (HTML + images)\n" +
                 "Cancel = don't save",
                 "Save recorded steps", MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question);
@@ -178,15 +178,17 @@ namespace PsrClone
                     using (var sfd = new SaveFileDialog())
                     {
                         sfd.Title = "Save recorded steps";
-                        sfd.Filter = "Recorded Steps (*.zip)|*.zip";
-                        sfd.FileName = "RecordedSteps_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".zip";
+                        sfd.Filter = "Recorded Steps (*.mht)|*.mht";
+                        sfd.FileName = "RecordedSteps_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".mht";
                         if (sfd.ShowDialog(this) != DialogResult.OK) return;
 
                         Cursor = Cursors.WaitCursor;
-                        ReportWriter.Save(sfd.FileName, steps, _recorder.StartedAt, _recorder.StoppedAt);
+                        // Report the path ReportWriter actually wrote: it normalizes the
+                        // extension, so sfd.FileName may not name the file on disk.
+                        string saved = ReportWriter.Save(sfd.FileName, steps, _recorder.StartedAt, _recorder.StoppedAt, _settings);
                         Cursor = Cursors.Default;
-                        _status.Text = "Saved: " + sfd.FileName;
-                        PromptOpen(sfd.FileName, true);
+                        _status.Text = "Saved: " + saved;
+                        PromptOpen(saved);
                     }
                 }
                 else // No = folder dump
@@ -199,10 +201,10 @@ namespace PsrClone
                         string dir = System.IO.Path.Combine(fbd.SelectedPath,
                             "RecordedSteps_" + DateTime.Now.ToString("yyyyMMdd_HHmmss"));
                         Cursor = Cursors.WaitCursor;
-                        string htm = ReportWriter.SaveFolder(dir, steps, _recorder.StartedAt, _recorder.StoppedAt);
+                        string htm = ReportWriter.SaveFolder(dir, steps, _recorder.StartedAt, _recorder.StoppedAt, _settings);
                         Cursor = Cursors.Default;
                         _status.Text = "Saved to folder: " + dir;
-                        PromptOpen(htm, false);
+                        PromptOpen(htm);
                     }
                 }
             }
@@ -214,12 +216,12 @@ namespace PsrClone
             }
         }
 
-        private void PromptOpen(string path, bool selectInExplorer)
+        private void PromptOpen(string path)
         {
             if (MessageBox.Show(this, "Saved to:\n" + path + "\n\nOpen containing folder?",
                 "PSR Clone", MessageBoxButtons.YesNo, MessageBoxIcon.Information) == DialogResult.Yes)
             {
-                System.Diagnostics.Process.Start("explorer.exe", "/select,\"" + path + "\"");
+                ReportWriter.ShowFolderContainingFile(path);
             }
         }
 

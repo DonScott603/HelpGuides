@@ -50,16 +50,6 @@ namespace PsrClone
                     new System.Windows.Point(p.X, p.Y));
                 if (el == null) throw new Exception("FromPoint returned null");
             });
-            ok &= Probe(sb, "System.IO.Compression (ZipArchive)", () =>
-            {
-                using (var ms = new MemoryStream())
-                using (var z = new System.IO.Compression.ZipArchive(ms, System.IO.Compression.ZipArchiveMode.Create)) { }
-            });
-            ok &= Probe(sb, "System.IO.Compression.FileSystem (ZipFile)", () =>
-            {
-                var t = typeof(System.IO.Compression.ZipFile);
-                if (t == null) throw new Exception("type missing");
-            });
             sb.AppendLine();
 
             // ---- Real capture test per monitor (the screenshot issue) ----

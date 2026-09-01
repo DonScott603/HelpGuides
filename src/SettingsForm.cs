@@ -11,6 +11,9 @@ namespace PsrClone
         private CheckBox _capture;
         private CheckBox _keyboard;
         private NumericUpDown _max;
+        private CheckBox _timestamps;
+        private CheckBox _details;
+        private CheckBox _environment;
 
         public SettingsForm(RecorderSettings settings)
         {
@@ -21,7 +24,7 @@ namespace PsrClone
             StartPosition = FormStartPosition.CenterParent;
             MaximizeBox = false;
             MinimizeBox = false;
-            ClientSize = new Size(360, 190);
+            ClientSize = new Size(360, 312);
             Font = new Font("Segoe UI", 9f);
 
             _capture = new CheckBox
@@ -54,19 +57,56 @@ namespace PsrClone
                 Width = 80
             };
 
-            var ok = new Button { Text = "OK", DialogResult = DialogResult.OK, Location = new Point(180, 150), Width = 80 };
-            var cancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, Location = new Point(268, 150), Width = 80 };
+            var section = new Label
+            {
+                Text = "Include in report:",
+                Location = new Point(16, 146),
+                AutoSize = true,
+                Font = new Font("Segoe UI", 9f, FontStyle.Bold)
+            };
+            _timestamps = new CheckBox
+            {
+                Text = "Date/time stamps on steps",
+                Checked = _s.IncludeStepTimestamps,
+                Location = new Point(16, 172),
+                AutoSize = true
+            };
+            _details = new CheckBox
+            {
+                Text = "Additional Details section",
+                Checked = _s.IncludeAdditionalDetails,
+                Location = new Point(16, 202),
+                AutoSize = true
+            };
+            _environment = new CheckBox
+            {
+                Text = "Recording Environment section",
+                Checked = _s.IncludeEnvironment,
+                Location = new Point(16, 232),
+                AutoSize = true
+            };
+
+            var ok = new Button { Text = "OK", DialogResult = DialogResult.OK, Location = new Point(180, 272), Width = 80 };
+            var cancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, Location = new Point(268, 272), Width = 80 };
             ok.Click += (s, e) =>
             {
                 _s.CaptureScreenshots = _capture.Checked;
                 _s.RecordKeyboard = _keyboard.Checked;
                 _s.MaxScreenshots = (int)_max.Value;
+                _s.IncludeStepTimestamps = _timestamps.Checked;
+                _s.IncludeAdditionalDetails = _details.Checked;
+                _s.IncludeEnvironment = _environment.Checked;
             };
 
+            // Add order defines tab order: the new rows must sit between the numeric and the buttons.
             Controls.Add(_capture);
             Controls.Add(_keyboard);
             Controls.Add(lbl);
             Controls.Add(_max);
+            Controls.Add(section);
+            Controls.Add(_timestamps);
+            Controls.Add(_details);
+            Controls.Add(_environment);
             Controls.Add(ok);
             Controls.Add(cancel);
             AcceptButton = ok;

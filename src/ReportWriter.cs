@@ -16,18 +16,23 @@ namespace PsrClone
     {
         private const string Boundary = "----=_NextPart_PSRClone_Recording";
 
-        // Keep method name for compatibility, but STOP writing ZIP.
-        // We interpret zipPath as a "base" and write zipPath with .mht extension.
-        public static string Save(string zipPath, IList<RecordedStep> steps, DateTime started, DateTime stopped)
+        /// <summary>
+        /// Writes the report as a single self-contained .mht. <paramref name="path"/> is
+        /// treated as a base path whose extension is normalized to .mht, so callers must
+        /// use the returned path rather than assuming the one they passed in.
+        /// </summary>
+        public static string Save(string path, IList<RecordedStep> steps, DateTime started, DateTime stopped,
+            RecorderSettings settings)
         {
-            string mhtPath = Path.ChangeExtension(zipPath, ".mht");
-            SaveMhtFile(mhtPath, steps, started, stopped);
+            string mhtPath = Path.ChangeExtension(path, ".mht");
+            SaveMhtFile(mhtPath, steps, started, stopped, settings);
             return mhtPath;
         }
 
-        public static void SaveMhtFile(string mhtPath, IList<RecordedStep> steps, DateTime started, DateTime stopped)
+        public static void SaveMhtFile(string mhtPath, IList<RecordedStep> steps, DateTime started, DateTime stopped,
+            RecorderSettings settings)
         {
-            string mht = BuildMht(steps, started, stopped);
+            string mht = BuildMht(steps, started, stopped, settings);
 
             var dir = Path.GetDirectoryName(mhtPath);
             if (!string.IsNullOrEmpty(dir))
@@ -37,9 +42,10 @@ namespace PsrClone
         }
 
         // Backwards compatible alias — rewritten for C# 5 compatibility
-        public static void SaveMht(string mhtPath, IList<RecordedStep> steps, DateTime started, DateTime stopped)
+        public static void SaveMht(string mhtPath, IList<RecordedStep> steps, DateTime started, DateTime stopped,
+            RecorderSettings settings)
         {
-            SaveMhtFile(mhtPath, steps, started, stopped);
+            SaveMhtFile(mhtPath, steps, started, stopped, settings);
         }
 
         /// <summary>
@@ -47,13 +53,14 @@ namespace PsrClone
         /// a single HTML file plus one JPEG per screenshot (no zip / no MHTML).
         /// Returns the path to the generated HTML file.
         /// </summary>
-        public static string SaveFolder(string dir, IList<RecordedStep> steps, DateTime started, DateTime stopped)
+        public static string SaveFolder(string dir, IList<RecordedStep> steps, DateTime started, DateTime stopped,
+            RecorderSettings settings)
         {
             Directory.CreateDirectory(dir);
 
             var images = new List<string>();
             var imageData = new List<byte[]>();
-            string html = BuildHtml(steps, started, stopped, images, imageData);
+            string html = BuildHtml(steps, started, stopped, images, imageData, settings);
 
             for (int i = 0; i < images.Count; i++)
                 File.WriteAllBytes(Path.Combine(dir, images[i]), imageData[i]);
@@ -93,12 +100,13 @@ namespace PsrClone
             });
         }
 
-        private static string BuildMht(IList<RecordedStep> steps, DateTime started, DateTime stopped)
+        private static string BuildMht(IList<RecordedStep> steps, DateTime started, DateTime stopped,
+            RecorderSettings settings)
         {
             var images = new List<string>();
             var imageData = new List<byte[]>();
 
-            string html = BuildHtml(steps, started, stopped, images, imageData);
+            string html = BuildHtml(steps, started, stopped, images, imageData, settings);
 
             var sb = new StringBuilder();
 
@@ -141,8 +149,12 @@ namespace PsrClone
             DateTime started,
             DateTime stopped,
             List<string> images,
-            List<byte[]> imageData)
+            List<byte[]> imageData,
+            RecorderSettings settings)
         {
+            // Single normalization point: every path into the report renders through here.
+            if (settings == null) settings = new RecorderSettings();
+
             var sb = new StringBuilder();
 
             sb.Append("<!DOCTYPE html><html><head><meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\">");
@@ -180,7 +192,7 @@ namespace PsrClone
                     sb.Append("<div class=\"stephdr\">")
                       .Append(step.Kind == StepKind.Comment ? "<span class=\"comment\">" : "<span>")
                       .Append(Html(prefix))
-                      .Append("(").Append(Html(step.Time.ToString("g"))).Append(") ")
+                      .Append(TimePrefix(step, settings.IncludeStepTimestamps))
                       .Append(Html(step.BuildDescription()))
                       .Append("</span></div>");
 
@@ -203,31 +215,37 @@ namespace PsrClone
                 }
             }
 
-            sb.Append("<h2>Additional Details</h2><div class=\"details\">");
-            sb.Append("<p>The following section lists each recorded step as text.</p>");
-
-            foreach (var step in steps)
+            if (settings.IncludeAdditionalDetails)
             {
-                sb.Append("<p><span class=\"idx\">Step ").Append(step.Index).Append(":</span> ")
-                  .Append("(").Append(Html(step.Time.ToString("g"))).Append(") ")
-                  .Append(Html(step.BuildDescription()));
+                sb.Append("<h2>Additional Details</h2><div class=\"details\">");
+                sb.Append("<p>The following section lists each recorded step as text.</p>");
 
-                if (!string.IsNullOrEmpty(step.ProgramName))
-                    sb.Append("<br><span class=\"meta\">Program: ").Append(Html(step.ProgramName)).Append("</span>");
+                foreach (var step in steps)
+                {
+                    sb.Append("<p><span class=\"idx\">Step ").Append(step.Index).Append(":</span> ")
+                      .Append(TimePrefix(step, settings.IncludeStepTimestamps))
+                      .Append(Html(step.BuildDescription()));
 
-                sb.Append("</p>");
+                    if (!string.IsNullOrEmpty(step.ProgramName))
+                        sb.Append("<br><span class=\"meta\">Program: ").Append(Html(step.ProgramName)).Append("</span>");
+
+                    sb.Append("</p>");
+                }
+                sb.Append("</div>");
             }
-            sb.Append("</div>");
 
-            sb.Append("<h2>Recording Environment</h2>");
-            sb.Append("<table class=\"env\">");
-            Row(sb, "Operating System", GetOsString());
-            Row(sb, "Computer", Environment.MachineName);
-            Row(sb, "User", Environment.UserName);
-            Row(sb, "Screen resolution", GetScreens());
-            Row(sb, "Total steps", steps.Count.ToString());
-            Row(sb, "Recorder", "PSR Clone (Problem Steps Recorder replacement)");
-            sb.Append("</table>");
+            if (settings.IncludeEnvironment)
+            {
+                sb.Append("<h2>Recording Environment</h2>");
+                sb.Append("<table class=\"env\">");
+                Row(sb, "Operating System", GetOsString());
+                Row(sb, "Computer", Environment.MachineName);
+                Row(sb, "User", Environment.UserName);
+                Row(sb, "Screen resolution", GetScreens());
+                Row(sb, "Total steps", steps.Count.ToString());
+                Row(sb, "Recorder", "PSR Clone (Problem Steps Recorder replacement)");
+                sb.Append("</table>");
+            }
 
             sb.Append("</body></html>");
             return sb.ToString();
@@ -236,6 +254,18 @@ namespace PsrClone
         private static void Row(StringBuilder sb, string k, string v)
         {
             sb.Append("<tr><td><b>").Append(Html(k)).Append("</b></td><td>").Append(Html(v)).Append("</td></tr>");
+        }
+
+        /// <summary>
+        /// The "(3/4/2026 5:06 AM) " prefix that precedes a step description, or an empty
+        /// string when per-step timestamps are switched off. Both emission sites share this
+        /// so they cannot drift apart. The text preceding each call site already ends in a
+        /// space, so omitting the prefix leaves no double space behind.
+        /// </summary>
+        private static string TimePrefix(RecordedStep step, bool include)
+        {
+            if (!include) return string.Empty;
+            return "(" + Html(step.Time.ToString("g")) + ") ";
         }
 
         private static byte[] RenderAnnotated(RecordedStep step)
