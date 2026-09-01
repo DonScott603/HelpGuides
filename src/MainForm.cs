@@ -19,7 +19,7 @@ namespace PsrClone
         private Label _status;
         private Label _count;
 
-        private const string RepoUrl = "https://github.com/SomeGuru/PSR-Clone";
+        private const string RepoUrl = "https://github.com/DonScott603/HelpGuides";
 
         public MainForm()
         {
