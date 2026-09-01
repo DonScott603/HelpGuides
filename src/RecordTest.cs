@@ -88,7 +88,7 @@ namespace PsrClone
 
             string outPath = args.Length > 1 ? args[1]
                 : Path.Combine(Path.GetTempPath(), "psrclone_recordtest.mht");
-            string report = ReportWriter.Save(outPath, rec.Snapshot(), rec.StartedAt, rec.StoppedAt);
+            string report = ReportWriter.Save(outPath, rec.Snapshot(), rec.StartedAt, rec.StoppedAt, settings);
 
             Log("screenshots captured: " + anyShot + "  report: " + report);
             _result = anyShot ? 0 : 2;

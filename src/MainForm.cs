@@ -185,7 +185,7 @@ namespace PsrClone
                         Cursor = Cursors.WaitCursor;
                         // Report the path ReportWriter actually wrote: it normalizes the
                         // extension, so sfd.FileName may not name the file on disk.
-                        string saved = ReportWriter.Save(sfd.FileName, steps, _recorder.StartedAt, _recorder.StoppedAt);
+                        string saved = ReportWriter.Save(sfd.FileName, steps, _recorder.StartedAt, _recorder.StoppedAt, _settings);
                         Cursor = Cursors.Default;
                         _status.Text = "Saved: " + saved;
                         PromptOpen(saved);
@@ -201,7 +201,7 @@ namespace PsrClone
                         string dir = System.IO.Path.Combine(fbd.SelectedPath,
                             "RecordedSteps_" + DateTime.Now.ToString("yyyyMMdd_HHmmss"));
                         Cursor = Cursors.WaitCursor;
-                        string htm = ReportWriter.SaveFolder(dir, steps, _recorder.StartedAt, _recorder.StoppedAt);
+                        string htm = ReportWriter.SaveFolder(dir, steps, _recorder.StartedAt, _recorder.StoppedAt, _settings);
                         Cursor = Cursors.Default;
                         _status.Text = "Saved to folder: " + dir;
                         PromptOpen(htm);

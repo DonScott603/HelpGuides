@@ -1,6 +1,6 @@
 # PSR Clone — Problem Steps Recorder replacement
 
-**Version 1.2.1**
+**Version 1.3.0**
 
 A self-contained Windows application that replicates **Problem Steps Recorder / Steps
 Recorder (`psr.exe`)**, which Microsoft has deprecated. Use it to record the exact
@@ -52,13 +52,20 @@ and performs a real capture test on each monitor (see *Troubleshooting*).
   `User left click on "Save" (button) in "Untitled - Notepad" (window)`.
 - **Add Comment** — dim the screen, drag to highlight a region, and type a note,
   captured as its own step.
-- **Settings** — enable/disable screen capture, toggle keyboard recording, and cap
-  the number of most-recent screenshots kept (default **500**, adjustable **1–1500**).
+- **Settings** — enable/disable screen capture, toggle keyboard recording, cap
+  the number of most-recent screenshots kept (default **500**, adjustable **1–1500**),
+  and choose what the report contains: per-step **date/time stamps**, the
+  **Additional Details** recap, and the **Recording Environment** table. All three
+  report toggles are **off by default**, so reports stay lean unless you opt in.
+  Two things to know before switching them on or off: Additional Details is the only
+  place the per-step **program name** is shown, and Recording Environment is the only
+  place the **total step count** is shown.
 - **Output** — on Stop you choose either a single self-contained
   **`.mht`** (MHTML) report, **or** a **folder dump** of loose files
-  (a browsable `.htm` plus one JPEG per step). Both include a "Recorded Problem
-  Steps" section, per-step screenshots, an "Additional Details" text recap, and a
-  recording-environment summary, and open in any browser.
+  (a browsable `.htm` plus one JPEG per step). Both contain a "Recorded Problem
+  Steps" section with per-step screenshots and the recording session's start/end
+  time, plus whichever optional sections you enabled in Settings, and open in any
+  browser.
 - **Help** — opens the project page at
   [github.com/SomeGuru/PSR-Clone](https://github.com/SomeGuru/PSR-Clone).
 
@@ -141,6 +148,15 @@ it, and record the change under *Changelog*.
 
 ## Changelog
 
+- **1.3.0** — three new Settings toggles control what the report contains:
+  per-step **date/time stamps**, the **Additional Details** recap, and the
+  **Recording Environment** table (machine name, username, OS, screen layout).
+  **All three default to off**, so reports no longer carry those sections unless you
+  enable them; the "Recording session" start/end header is always kept. `--selftest`
+  now exercises both the on and off paths, and asserts report *content* against the
+  raw folder-dump HTML rather than the quoted-printable-encoded `.mht` — in the
+  `.mht`, soft line breaks can split a marker, which made presence checks flaky and
+  would have made the new absence checks pass spuriously.
 - **1.2.1** — output format is now a single **`.mht`** file rather than a `.zip`,
   finishing the packaging change started in 1.2.0: the save dialog, status line and
   "open containing folder" prompt all use the real written path (previously they
