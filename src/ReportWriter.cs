@@ -9,12 +9,19 @@ using System.Text;
 namespace PsrClone
 {
     /// <summary>
-    /// Writes a standalone MHTML (.mht) document with embedded screenshots.
-    /// (ZIP packaging removed.)
+    /// Writes a standalone MHTML (.mht) document with embedded screenshots, or a folder of
+    /// loose files. Every output path renders through <see cref="BuildHtml"/>, and every
+    /// image renders through <see cref="RenderPreview"/> (shared with the guide editor so
+    /// what you see in the editor is exactly what lands in the file).
     /// </summary>
     public static class ReportWriter
     {
         private const string Boundary = "----=_NextPart_PSRClone_Recording";
+
+        // ---------------------------------------------------------------------------------
+        // Public entry points. The IList<RecordedStep> overloads are kept for callers that
+        // never touch the editor (SelfTest, RecordTest); they wrap a default GuideDocument.
+        // ---------------------------------------------------------------------------------
 
         /// <summary>
         /// Writes the report as a single self-contained .mht. <paramref name="path"/> is
@@ -24,15 +31,25 @@ namespace PsrClone
         public static string Save(string path, IList<RecordedStep> steps, DateTime started, DateTime stopped,
             RecorderSettings settings)
         {
+            return Save(path, new GuideDocument(steps, started, stopped), settings);
+        }
+
+        public static string Save(string path, GuideDocument doc, RecorderSettings settings)
+        {
             string mhtPath = Path.ChangeExtension(path, ".mht");
-            SaveMhtFile(mhtPath, steps, started, stopped, settings);
+            SaveMhtFile(mhtPath, doc, settings);
             return mhtPath;
         }
 
         public static void SaveMhtFile(string mhtPath, IList<RecordedStep> steps, DateTime started, DateTime stopped,
             RecorderSettings settings)
         {
-            string mht = BuildMht(steps, started, stopped, settings);
+            SaveMhtFile(mhtPath, new GuideDocument(steps, started, stopped), settings);
+        }
+
+        public static void SaveMhtFile(string mhtPath, GuideDocument doc, RecorderSettings settings)
+        {
+            string mht = BuildMht(doc, settings);
 
             var dir = Path.GetDirectoryName(mhtPath);
             if (!string.IsNullOrEmpty(dir))
@@ -41,7 +58,7 @@ namespace PsrClone
             File.WriteAllText(mhtPath, mht, new UTF8Encoding(false));
         }
 
-        // Backwards compatible alias — rewritten for C# 5 compatibility
+        // Backwards compatible alias - rewritten for C# 5 compatibility
         public static void SaveMht(string mhtPath, IList<RecordedStep> steps, DateTime started, DateTime stopped,
             RecorderSettings settings)
         {
@@ -56,17 +73,26 @@ namespace PsrClone
         public static string SaveFolder(string dir, IList<RecordedStep> steps, DateTime started, DateTime stopped,
             RecorderSettings settings)
         {
+            return SaveFolder(dir, new GuideDocument(steps, started, stopped), settings);
+        }
+
+        public static string SaveFolder(string dir, GuideDocument doc, RecorderSettings settings)
+        {
             Directory.CreateDirectory(dir);
 
             var images = new List<string>();
             var imageData = new List<byte[]>();
-            string html = BuildHtml(steps, started, stopped, images, imageData, settings);
+            // Loose files: images are siblings of the .htm, so reference them by bare
+            // file name. (The "cid:" scheme only resolves inside an .mht.)
+            string html = BuildHtml(doc, images, imageData, settings, string.Empty);
 
             for (int i = 0; i < images.Count; i++)
                 File.WriteAllBytes(Path.Combine(dir, images[i]), imageData[i]);
 
-            string htmlPath = Path.Combine(dir,
-                "RecordedSteps_" + started.ToString("yyyyMMdd_HHmmss") + ".htm");
+            string baseName = doc.HasCustomTitle
+                ? doc.SuggestedFileBase()
+                : "RecordedSteps_" + doc.Started.ToString("yyyyMMdd_HHmmss");
+            string htmlPath = Path.Combine(dir, baseName + ".htm");
 
             File.WriteAllText(htmlPath, html, new UTF8Encoding(false));
             return htmlPath;
@@ -100,19 +126,22 @@ namespace PsrClone
             });
         }
 
-        private static string BuildMht(IList<RecordedStep> steps, DateTime started, DateTime stopped,
-            RecorderSettings settings)
+        // ---------------------------------------------------------------------------------
+        // MHTML envelope
+        // ---------------------------------------------------------------------------------
+
+        private static string BuildMht(GuideDocument doc, RecorderSettings settings)
         {
             var images = new List<string>();
             var imageData = new List<byte[]>();
 
-            string html = BuildHtml(steps, started, stopped, images, imageData, settings);
+            string html = BuildHtml(doc, images, imageData, settings, "cid:");
 
             var sb = new StringBuilder();
 
             sb.Append("From: <Saved by PSR Clone>\r\n");
-            sb.Append("Subject: Recorded Problem Steps\r\n");
-            sb.Append("Date: ").Append(started.ToString("ddd, dd MMM yyyy HH:mm:ss")).Append(" -0000\r\n");
+            sb.Append("Subject: ").Append(MimeHeaderSafe(doc.Heading)).Append("\r\n");
+            sb.Append("Date: ").Append(doc.Started.ToString("ddd, dd MMM yyyy HH:mm:ss")).Append(" -0000\r\n");
             sb.Append("MIME-Version: 1.0\r\n");
             sb.Append("Content-Type: multipart/related;\r\n");
             sb.Append("\ttype=\"text/html\";\r\n");
@@ -144,32 +173,67 @@ namespace PsrClone
             return sb.ToString();
         }
 
+        /// <summary>Keeps a user title on one ASCII-ish header line; MIME headers cannot wrap freely.</summary>
+        private static string MimeHeaderSafe(string s)
+        {
+            if (string.IsNullOrEmpty(s)) return GuideDocument.DefaultTitle;
+            var sb = new StringBuilder(s.Length);
+            foreach (char c in s)
+            {
+                if (c == '\r' || c == '\n') sb.Append(' ');
+                else if (c < 32 || c > 126) sb.Append('?');
+                else sb.Append(c);
+            }
+            return sb.ToString();
+        }
+
+        // ---------------------------------------------------------------------------------
+        // HTML
+        // ---------------------------------------------------------------------------------
+
         private static string BuildHtml(
-            IList<RecordedStep> steps,
-            DateTime started,
-            DateTime stopped,
+            GuideDocument doc,
             List<string> images,
             List<byte[]> imageData,
-            RecorderSettings settings)
+            RecorderSettings settings,
+            string imageSrcPrefix)
         {
             // Single normalization point: every path into the report renders through here.
             if (settings == null) settings = new RecorderSettings();
+            if (doc == null) doc = new GuideDocument();
+            IList<RecordedStep> steps = doc.Steps;
+            DateTime started = doc.Started;
+            DateTime stopped = doc.Stopped;
 
             var sb = new StringBuilder();
 
             sb.Append("<!DOCTYPE html><html><head><meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\">");
-            sb.Append("<title>Recorded Problem Steps</title>");
+            sb.Append("<title>").Append(Html(doc.Heading)).Append("</title>");
             sb.Append("<style>");
             sb.Append("body{font-family:Segoe UI,Tahoma,Arial,sans-serif;font-size:12pt;color:#000;margin:16px;background:#fff;}");
             sb.Append("h1{font-size:18pt;} h2{font-size:14pt;border-bottom:1px solid #ccc;padding-bottom:4px;margin-top:28px;}");
-            sb.Append(".intro{color:#333;} .step{margin:22px 0;} .stephdr{font-weight:bold;font-size:12pt;} ");
+            sb.Append(".intro{color:#333;white-space:pre-wrap;} .step{margin:22px 0;} .stephdr{font-weight:bold;font-size:12pt;} ");
             sb.Append(".shot{border:1px solid #888;margin-top:8px;max-width:100%;} .meta{color:#555;font-size:10pt;} ");
             sb.Append(".comment{color:#a00;font-weight:bold;} .details p{margin:4px 0;} .idx{color:#0645ad;} ");
+            sb.Append(".step.text .stepbody{margin:6px 0 0 0;} ");
             sb.Append("table.env{border-collapse:collapse;} table.env td{border:1px solid #ddd;padding:4px 8px;font-size:10pt;}");
+            // Print layout: keep each step's heading and screenshot on one page. The image
+            // max-height is what makes that achievable: a full-monitor capture is taller than
+            // a Letter/A4 page, and break-inside cannot help a block that does not fit at all.
+            // Both the modern and legacy page-break spellings are emitted because Edge/Chrome
+            // honour the former and Word (which opens .mht by default) honours the latter.
+            sb.Append("@page{margin:0.6in;} ");
+            sb.Append("@media print{");
+            sb.Append("body{margin:0;} ");
+            sb.Append(".step{break-inside:avoid;page-break-inside:avoid;} ");
+            sb.Append(".shot{max-width:100%;max-height:7.2in;width:auto;height:auto;} ");
+            sb.Append("h1,h2{break-after:avoid;page-break-after:avoid;} ");
+            sb.Append("table.env{break-inside:avoid;page-break-inside:avoid;}");
+            sb.Append("}");
             sb.Append("</style></head><body>");
 
-            sb.Append("<h1>Recorded Problem Steps</h1>");
-            sb.Append("<p class=\"intro\">This file contains all of the recorded problem steps and information captured to help describe your recorded steps.</p>");
+            sb.Append("<h1>").Append(Html(doc.Heading)).Append("</h1>");
+            sb.Append("<p class=\"intro\">").Append(HtmlMultiline(doc.EffectiveIntro)).Append("</p>");
             sb.Append("<p class=\"meta\">Recording session: ")
               .Append(Html(started.ToString("F"))).Append(" &ndash; ")
               .Append(Html(stopped == DateTime.MinValue ? DateTime.Now.ToString("F") : stopped.ToString("F")))
@@ -186,14 +250,25 @@ namespace PsrClone
             {
                 foreach (var step in steps)
                 {
+                    string prefix = "Step " + step.Index + ": ";
+
+                    if (step.Kind == StepKind.Text)
+                    {
+                        // Author-inserted explanatory step: heading + free text, never an image.
+                        sb.Append("<div class=\"step text\">");
+                        sb.Append("<div class=\"stephdr\"><span>").Append(Html(prefix.TrimEnd())).Append("</span></div>");
+                        sb.Append("<p class=\"stepbody\">").Append(HtmlMultiline(step.DisplayDescription())).Append("</p>");
+                        sb.Append("</div>");
+                        continue;
+                    }
+
                     sb.Append("<div class=\"step\">");
 
-                    string prefix = "Step " + step.Index + ": ";
                     sb.Append("<div class=\"stephdr\">")
                       .Append(step.Kind == StepKind.Comment ? "<span class=\"comment\">" : "<span>")
                       .Append(Html(prefix))
                       .Append(TimePrefix(step, settings.IncludeStepTimestamps))
-                      .Append(Html(step.BuildDescription()))
+                      .Append(HtmlMultiline(step.DisplayDescription()))
                       .Append("</span></div>");
 
                     if (step.Screenshot != null)
@@ -204,7 +279,8 @@ namespace PsrClone
                         images.Add(cid);
                         imageData.Add(jpg);
 
-                        sb.Append("<img class=\"shot\" src=\"cid:")
+                        sb.Append("<img class=\"shot\" src=\"")
+                          .Append(imageSrcPrefix)
                           .Append(cid)
                           .Append("\" alt=\"Step ")
                           .Append(step.Index)
@@ -224,7 +300,7 @@ namespace PsrClone
                 {
                     sb.Append("<p><span class=\"idx\">Step ").Append(step.Index).Append(":</span> ")
                       .Append(TimePrefix(step, settings.IncludeStepTimestamps))
-                      .Append(Html(step.BuildDescription()));
+                      .Append(HtmlMultiline(step.DisplayDescription()));
 
                     if (!string.IsNullOrEmpty(step.ProgramName))
                         sb.Append("<br><span class=\"meta\">Program: ").Append(Html(step.ProgramName)).Append("</span>");
@@ -268,38 +344,129 @@ namespace PsrClone
             return "(" + Html(step.Time.ToString("g")) + ") ";
         }
 
+        // ---------------------------------------------------------------------------------
+        // Image rendering
+        // ---------------------------------------------------------------------------------
+
         private static byte[] RenderAnnotated(RecordedStep step)
         {
-            using (var bmp = new Bitmap(step.Screenshot))
-            using (var g = Graphics.FromImage(bmp))
-            {
-                g.SmoothingMode = SmoothingMode.AntiAlias;
-
-                if (step.Highlight != Rectangle.Empty && step.Highlight.Width > 0 && step.Highlight.Height > 0)
-                {
-                    var rect = step.Highlight;
-                    rect.Inflate(2, 2);
-
-                    using (var pen = new Pen(Color.FromArgb(255, 0, 120, 215), 3f))
-                        g.DrawRectangle(pen, rect);
-
-                    using (var glow = new Pen(Color.FromArgb(90, 0, 120, 215), 7f))
-                        g.DrawRectangle(glow, rect);
-                }
-
-                if (step.Kind != StepKind.Comment && step.Cursor != Point.Empty)
-                {
-                    int r = 14;
-                    var c = step.Cursor;
-
-                    using (var b = new SolidBrush(Color.FromArgb(70, 255, 210, 0)))
-                        g.FillEllipse(b, c.X - r, c.Y - r, r * 2, r * 2);
-
-                    using (var pen = new Pen(Color.FromArgb(220, 230, 140, 0), 2f))
-                        g.DrawEllipse(pen, c.X - r, c.Y - r, r * 2, r * 2);
-                }
-
+            using (var bmp = RenderPreview(step))
                 return ToJpeg(bmp, 82L);
+        }
+
+        /// <summary>
+        /// Renders the step's screenshot exactly as it will appear in the report: element
+        /// highlight and click marker, then redactions, then the crop. Always returns a new
+        /// bitmap the caller owns; <see cref="RecordedStep.Screenshot"/> is never modified.
+        /// Returns null when the step has no screenshot.
+        /// </summary>
+        public static Bitmap RenderPreview(RecordedStep step)
+        {
+            if (step == null || step.Screenshot == null) return null;
+
+            Bitmap full = new Bitmap(step.Screenshot);
+            try
+            {
+                using (var g = Graphics.FromImage(full))
+                {
+                    g.SmoothingMode = SmoothingMode.AntiAlias;
+
+                    if (step.Highlight != Rectangle.Empty && step.Highlight.Width > 0 && step.Highlight.Height > 0)
+                    {
+                        var rect = step.Highlight;
+                        rect.Inflate(2, 2);
+
+                        using (var pen = new Pen(Color.FromArgb(255, 0, 120, 215), 3f))
+                            g.DrawRectangle(pen, rect);
+
+                        using (var glow = new Pen(Color.FromArgb(90, 0, 120, 215), 7f))
+                            g.DrawRectangle(glow, rect);
+                    }
+
+                    if (step.Kind != StepKind.Comment && step.Cursor != Point.Empty)
+                    {
+                        int r = 14;
+                        var c = step.Cursor;
+
+                        using (var b = new SolidBrush(Color.FromArgb(70, 255, 210, 0)))
+                            g.FillEllipse(b, c.X - r, c.Y - r, r * 2, r * 2);
+
+                        using (var pen = new Pen(Color.FromArgb(220, 230, 140, 0), 2f))
+                            g.DrawEllipse(pen, c.X - r, c.Y - r, r * 2, r * 2);
+                    }
+
+                    // Redactions go on top of the annotations so a marker can never leak
+                    // the shape of what was hidden.
+                    if (step.Redactions != null)
+                    {
+                        foreach (var red in step.Redactions)
+                            ApplyRedaction(full, g, red);
+                    }
+                }
+
+                Rectangle crop = step.Crop;
+                if (crop != Rectangle.Empty)
+                {
+                    crop.Intersect(new Rectangle(0, 0, full.Width, full.Height));
+                    if (crop.Width >= 1 && crop.Height >= 1
+                        && (crop.Width < full.Width || crop.Height < full.Height))
+                    {
+                        Bitmap cropped = full.Clone(crop, full.PixelFormat);
+                        full.Dispose();
+                        return cropped;
+                    }
+                }
+
+                Bitmap result = full;
+                full = null; // ownership passes to caller
+                return result;
+            }
+            finally
+            {
+                if (full != null) full.Dispose();
+            }
+        }
+
+        private static void ApplyRedaction(Bitmap bmp, Graphics g, Redaction red)
+        {
+            if (red == null) return;
+            Rectangle r = red.Rect;
+            r.Intersect(new Rectangle(0, 0, bmp.Width, bmp.Height));
+            if (r.Width <= 0 || r.Height <= 0) return;
+
+            if (red.Kind == RedactionKind.Solid)
+            {
+                g.FillRectangle(Brushes.Black, r);
+                return;
+            }
+
+            // Pixelate: shrink the region to a handful of cells (averaging pixels), then blow
+            // it back up with nearest-neighbour sampling so each cell becomes a flat block.
+            // Block size scales with the capture so the mosaic reads the same at any DPI.
+            int block = Math.Max(10, bmp.Width / 120);
+            int cellsW = Math.Max(1, (r.Width + block - 1) / block);
+            int cellsH = Math.Max(1, (r.Height + block - 1) / block);
+
+            using (var small = new Bitmap(cellsW, cellsH, PixelFormat.Format24bppRgb))
+            {
+                using (var sg = Graphics.FromImage(small))
+                {
+                    sg.InterpolationMode = InterpolationMode.HighQualityBilinear;
+                    sg.PixelOffsetMode = PixelOffsetMode.Half;
+                    sg.CompositingQuality = CompositingQuality.HighQuality;
+                    sg.DrawImage(bmp, new Rectangle(0, 0, cellsW, cellsH), r, GraphicsUnit.Pixel);
+                }
+
+                var oldInterp = g.InterpolationMode;
+                var oldOffset = g.PixelOffsetMode;
+                var oldSmooth = g.SmoothingMode;
+                g.InterpolationMode = InterpolationMode.NearestNeighbor;
+                g.PixelOffsetMode = PixelOffsetMode.Half;
+                g.SmoothingMode = SmoothingMode.None;
+                g.DrawImage(small, r, new Rectangle(0, 0, cellsW, cellsH), GraphicsUnit.Pixel);
+                g.InterpolationMode = oldInterp;
+                g.PixelOffsetMode = oldOffset;
+                g.SmoothingMode = oldSmooth;
             }
         }
 
@@ -337,6 +504,10 @@ namespace PsrClone
             return sb.ToString();
         }
 
+        // ---------------------------------------------------------------------------------
+        // Text helpers
+        // ---------------------------------------------------------------------------------
+
         private static string Html(string s)
         {
             if (string.IsNullOrEmpty(s)) return string.Empty;
@@ -354,6 +525,13 @@ namespace PsrClone
                 }
             }
             return sb.ToString();
+        }
+
+        /// <summary>Escapes like <see cref="Html"/> and turns line breaks into &lt;br&gt;.</summary>
+        private static string HtmlMultiline(string s)
+        {
+            if (string.IsNullOrEmpty(s)) return string.Empty;
+            return Html(s.Replace("\r\n", "\n").Replace('\r', '\n')).Replace("\n", "<br>");
         }
 
         private static string GetOsString()

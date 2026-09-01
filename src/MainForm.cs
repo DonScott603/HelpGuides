@@ -107,6 +107,14 @@ namespace PsrClone
 
         private void StartRecording()
         {
+            // Release the previous run's screenshots; the editor is modal, so nothing can
+            // still be looking at them once Start is enabled again.
+            if (_recorder != null)
+            {
+                try { _recorder.Dispose(); } catch { }
+                _recorder = null;
+            }
+
             _recorder = new Recorder(_settings);
             _recorder.StepAdded += (s, step) =>
             {
@@ -161,47 +169,51 @@ namespace PsrClone
                 return;
             }
 
-            // Ask the user how they want the report saved.
-            var choice = MessageBox.Show(this,
-                "How would you like to save the recording?\n\n" +
-                "Yes = single .mht file (portable)\n" +
-                "No = dump loose files into a folder (HTML + images)\n" +
-                "Cancel = don't save",
-                "Save recorded steps", MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question);
-
-            if (choice == DialogResult.Cancel) return;
+            // Review pass: title, step text, insert/delete, crop, redact. The editor decides
+            // the output format too, so the old Yes/No/Cancel prompt is gone.
+            GuideDocument doc;
+            EditorSaveMode mode;
+            using (var editor = new GuideEditorForm(steps, _recorder.StartedAt, _recorder.StoppedAt))
+            {
+                if (editor.ShowDialog(this) != DialogResult.OK || editor.Result == null)
+                {
+                    _status.Text = "Stopped. Recording discarded.";
+                    return;
+                }
+                doc = editor.Result;
+                mode = editor.SaveMode;
+            }
 
             try
             {
-                if (choice == DialogResult.Yes)
+                if (mode == EditorSaveMode.Mht)
                 {
                     using (var sfd = new SaveFileDialog())
                     {
-                        sfd.Title = "Save recorded steps";
-                        sfd.Filter = "Recorded Steps (*.mht)|*.mht";
-                        sfd.FileName = "RecordedSteps_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".mht";
+                        sfd.Title = "Save guide";
+                        sfd.Filter = "Guide (*.mht)|*.mht";
+                        sfd.FileName = doc.SuggestedFileBase() + ".mht";
                         if (sfd.ShowDialog(this) != DialogResult.OK) return;
 
                         Cursor = Cursors.WaitCursor;
                         // Report the path ReportWriter actually wrote: it normalizes the
                         // extension, so sfd.FileName may not name the file on disk.
-                        string saved = ReportWriter.Save(sfd.FileName, steps, _recorder.StartedAt, _recorder.StoppedAt, _settings);
+                        string saved = ReportWriter.Save(sfd.FileName, doc, _settings);
                         Cursor = Cursors.Default;
                         _status.Text = "Saved: " + saved;
                         PromptOpen(saved);
                     }
                 }
-                else // No = folder dump
+                else // folder dump
                 {
                     using (var fbd = new FolderBrowserDialog())
                     {
-                        fbd.Description = "Choose a folder to dump the report files into";
+                        fbd.Description = "Choose a folder to dump the guide files into";
                         if (fbd.ShowDialog(this) != DialogResult.OK) return;
 
-                        string dir = System.IO.Path.Combine(fbd.SelectedPath,
-                            "RecordedSteps_" + DateTime.Now.ToString("yyyyMMdd_HHmmss"));
+                        string dir = System.IO.Path.Combine(fbd.SelectedPath, doc.SuggestedFileBase());
                         Cursor = Cursors.WaitCursor;
-                        string htm = ReportWriter.SaveFolder(dir, steps, _recorder.StartedAt, _recorder.StoppedAt, _settings);
+                        string htm = ReportWriter.SaveFolder(dir, doc, _settings);
                         Cursor = Cursors.Default;
                         _status.Text = "Saved to folder: " + dir;
                         PromptOpen(htm);
