@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
-using System.IO.Compression;
 
 namespace PsrClone
 {
@@ -13,7 +12,7 @@ namespace PsrClone
         {
             try
             {
-                string outZip = args.Length > 1 ? args[1] : Path.Combine(Path.GetTempPath(), "psrclone_selftest.zip");
+                string outPath = args.Length > 1 ? args[1] : Path.Combine(Path.GetTempPath(), "psrclone_selftest.mht");
                 var steps = new List<RecordedStep>();
 
                 steps.Add(MakeMouse(1, "left click", "Start", "button", "Taskbar", "explorer",
@@ -39,38 +38,33 @@ namespace PsrClone
                 };
                 steps.Add(comment);
 
-                ReportWriter.Save(outZip, steps, DateTime.Now.AddMinutes(-2), DateTime.Now);
+                string mht = ReportWriter.Save(outPath, steps, DateTime.Now.AddMinutes(-2), DateTime.Now);
 
-                // Validate the zip contains exactly one .mht with expected markers.
-                using (var zip = ZipFile.OpenRead(outZip))
+                // Validate the .mht actually written to disk carries every expected marker.
+                if (!File.Exists(mht)) return Fail("report not written: " + mht);
+                if (!mht.EndsWith(".mht", StringComparison.OrdinalIgnoreCase))
+                    return Fail("report is not a .mht: " + mht);
+
+                string content = File.ReadAllText(mht);
+                foreach (var marker in new[]
                 {
-                    if (zip.Entries.Count != 1) return Fail("expected 1 entry, got " + zip.Entries.Count);
-                    var entry = zip.Entries[0];
-                    if (!entry.FullName.EndsWith(".mht")) return Fail("entry not .mht: " + entry.FullName);
-                    using (var r = new StreamReader(entry.Open()))
-                    {
-                        string content = r.ReadToEnd();
-                        foreach (var marker in new[]
-                        {
-                            "Recorded Problem Steps",
-                            "multipart/related",
-                            "Content-Transfer-Encoding: base64",
-                            "User left click on",
-                            "User double click on",
-                            "User keyboard input",
-                            "User Comment:",
-                            "Additional Details"
-                        })
-                        {
-                            if (content.IndexOf(marker, StringComparison.Ordinal) < 0)
-                                return Fail("missing marker: " + marker);
-                        }
-                        int imgs = CountOccurrences(content, "Content-Type: image/jpeg");
-                        if (imgs != 4) return Fail("expected 4 embedded images, got " + imgs);
-                    }
+                    "Recorded Problem Steps",
+                    "multipart/related",
+                    "Content-Transfer-Encoding: base64",
+                    "User left click on",
+                    "User double click on",
+                    "User keyboard input",
+                    "User Comment:",
+                    "Additional Details"
+                })
+                {
+                    if (content.IndexOf(marker, StringComparison.Ordinal) < 0)
+                        return Fail("missing marker: " + marker);
                 }
+                int imgs = CountOccurrences(content, "Content-Type: image/jpeg");
+                if (imgs != 4) return Fail("expected 4 embedded images, got " + imgs);
 
-                var fi = new FileInfo(outZip);
+                var fi = new FileInfo(mht);
 
                 // Validate the folder-dump output too.
                 string dumpDir = Path.Combine(Path.GetTempPath(), "psrclone_selftest_dump");
@@ -84,7 +78,7 @@ namespace PsrClone
                     return Fail("folder dump: html missing title");
                 Directory.Delete(dumpDir, true);
 
-                Console.WriteLine("SELFTEST PASS  ->  " + outZip + "  (" + fi.Length + " bytes)");
+                Console.WriteLine("SELFTEST PASS  ->  " + mht + "  (" + fi.Length + " bytes)");
                 return 0;
             }
             catch (Exception ex)

@@ -84,8 +84,6 @@ $refs = @(
     'System.Drawing.dll',
     'System.Windows.Forms.dll',
     'System.Xml.dll',
-    'System.IO.Compression.dll',
-    'System.IO.Compression.FileSystem.dll',
     $uiaClient,
     $uiaTypes,
     $winBase
@@ -112,8 +110,8 @@ if ($LASTEXITCODE -ne 0) { throw "Build failed (csc exit $LASTEXITCODE)" }
 Write-Host "Build succeeded -> $exe"
 
 if ($SelfTest) {
-    $zip = Join-Path $outDir 'selftest.zip'
-    & $exe '--selftest' $zip
+    $mht = Join-Path $outDir 'selftest.mht'
+    & $exe '--selftest' $mht
     if ($LASTEXITCODE -ne 0) { throw "Self-test failed (exit $LASTEXITCODE)" }
 }
 if ($Run) { Start-Process $exe }

@@ -1,12 +1,12 @@
 # PSR Clone — Problem Steps Recorder replacement
 
-**Version 1.2.0**
+**Version 1.2.1**
 
 A self-contained Windows application that replicates **Problem Steps Recorder / Steps
 Recorder (`psr.exe`)**, which Microsoft has deprecated. Use it to record the exact
 steps you take to reproduce a problem — each user action is captured with an
 annotated screenshot and a plain-language description, then exported either as a
-single `.zip` containing an MHTML (`.mht`) report or as a folder of loose files,
+single self-contained MHTML (`.mht`) report or as a folder of loose files,
 just like `psr.exe`.
 
 It targets the **.NET Framework 4.x runtime that is built into every Windows 10/11
@@ -24,7 +24,6 @@ Windows and is present on every standard Windows 10/11 desktop install:
 | GDI+ (`System.Drawing`) | Windows | Screen capture + image encoding. |
 | WinForms (`System.Windows.Forms`) | Windows | Toolbar / dialogs. |
 | UI Automation (`UIAutomationClient/Types`, `WindowsBase`) | Windows (GAC) | Resolves element/window names. |
-| Zip (`System.IO.Compression[.FileSystem]`) | .NET Framework 4.5+ | `.zip` packaging. |
 
 Nothing needs to be "installed" on a target machine. If a machine ever lacks the
 in-box .NET Framework (e.g. Windows **Server Core**), install the Microsoft
@@ -55,8 +54,8 @@ and performs a real capture test on each monitor (see *Troubleshooting*).
   captured as its own step.
 - **Settings** — enable/disable screen capture, toggle keyboard recording, and cap
   the number of most-recent screenshots kept (default **500**, adjustable **1–1500**).
-- **Output** — on Stop you choose either a single **`.zip`** containing a
-  self-contained `.mht` (MHTML) report, **or** a **folder dump** of loose files
+- **Output** — on Stop you choose either a single self-contained
+  **`.mht`** (MHTML) report, **or** a **folder dump** of loose files
   (a browsable `.htm` plus one JPEG per step). Both include a "Recorded Problem
   Steps" section, per-step screenshots, an "Additional Details" text recap, and a
   recording-environment summary, and open in any browser.
@@ -86,10 +85,10 @@ in the window title and Help dialog. **Bump the version on every change.**
 1. Run `bin\PsrClone.exe`.
 2. Click **Start Record** and reproduce your problem.
 3. Optionally click **Add Comment** to annotate a specific spot.
-4. Click **Stop**, then choose the output format: a single **`.zip`**, or a
+4. Click **Stop**, then choose the output format: a single **`.mht`**, or a
    **folder** of loose files (HTML + images).
-5. Share the result; recipients open the `.mht` (in the zip) or the `.htm` (in the
-   folder) in any browser. The **Help** button opens the project's GitHub page.
+5. Share the result; recipients open the `.mht`, or the `.htm` (in the folder),
+   in any browser. The **Help** button opens the project's GitHub page.
 
 ## Verification & diagnostics
 
@@ -97,10 +96,10 @@ in the window title and Help dialog. **Bump the version on every change.**
   awareness, and runs a real capture test on each monitor. Shows a dialog and writes
   a log; add `--quiet` for headless (exit `0` = healthy). **Run this first on any
   machine where capture or layout looks wrong.**
-- `--selftest <out.zip>` — builds a synthetic recording and validates the produced
-  zip/MHTML *and* folder dump (embedded JPEGs, loose images, all expected markers).
-  Exit code `0` = pass.
-- `--recordtest <out.zip> <log.txt>` — installs the real hooks, synthesizes a click
+- `--selftest <out.mht>` — builds a synthetic recording and validates the produced
+  MHTML *and* folder dump (embedded JPEGs, loose images, all expected markers).
+  The extension is normalized to `.mht`. Exit code `0` = pass.
+- `--recordtest <out.mht> <log.txt>` — installs the real hooks, synthesizes a click
   and keystrokes via `SendInput`, and confirms live capture (steps + screenshots +
   UI Automation). Exit code `0` = pass.
 
@@ -142,6 +141,12 @@ it, and record the change under *Changelog*.
 
 ## Changelog
 
+- **1.2.1** — output format is now a single **`.mht`** file rather than a `.zip`,
+  finishing the packaging change started in 1.2.0: the save dialog, status line and
+  "open containing folder" prompt all use the real written path (previously they
+  named a `.zip` that was never created), `--selftest` validates the `.mht` on disk
+  (it had been failing outright), and the unused `System.IO.Compression` references
+  and `--check` probes were dropped.
 - **1.2.0** — Per-Monitor-V2 DPI awareness (manifest + programmatic) fixing
   wrong/blank captures on scaled/secondary monitors; robust capture with fallback
   so a failed grab never drops a step; `Add Comment` now targets the monitor under
@@ -169,7 +174,7 @@ PSRClone/
     NativeMethods.cs        # Win32 interop (hooks, key translation, SendInput, DPI)
     Step.cs                 # recorded-step model + description formatting
     RecorderSettings.cs     # options
-    ReportWriter.cs         # MHTML generation + zip / folder packaging
+    ReportWriter.cs         # MHTML generation + folder packaging
     DependencyCheck.cs      # --check environment & dependency diagnostic
     SelfTest.cs             # headless report validation
     RecordTest.cs           # live hook/capture validation

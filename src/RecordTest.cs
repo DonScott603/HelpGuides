@@ -86,11 +86,11 @@ namespace PsrClone
             bool anyShot = false;
             foreach (var st in rec.Snapshot()) if (st.Screenshot != null) { anyShot = true; break; }
 
-            string outZip = args.Length > 1 ? args[1]
-                : Path.Combine(Path.GetTempPath(), "psrclone_recordtest.zip");
-            ReportWriter.Save(outZip, rec.Snapshot(), rec.StartedAt, rec.StoppedAt);
+            string outPath = args.Length > 1 ? args[1]
+                : Path.Combine(Path.GetTempPath(), "psrclone_recordtest.mht");
+            string report = ReportWriter.Save(outPath, rec.Snapshot(), rec.StartedAt, rec.StoppedAt);
 
-            Log("screenshots captured: " + anyShot + "  report: " + outZip);
+            Log("screenshots captured: " + anyShot + "  report: " + report);
             _result = anyShot ? 0 : 2;
             Application.ExitThread();
         }

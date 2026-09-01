@@ -16,11 +16,14 @@ namespace PsrClone
     {
         private const string Boundary = "----=_NextPart_PSRClone_Recording";
 
-        // Keep method name for compatibility, but STOP writing ZIP.
-        // We interpret zipPath as a "base" and write zipPath with .mht extension.
-        public static string Save(string zipPath, IList<RecordedStep> steps, DateTime started, DateTime stopped)
+        /// <summary>
+        /// Writes the report as a single self-contained .mht. <paramref name="path"/> is
+        /// treated as a base path whose extension is normalized to .mht, so callers must
+        /// use the returned path rather than assuming the one they passed in.
+        /// </summary>
+        public static string Save(string path, IList<RecordedStep> steps, DateTime started, DateTime stopped)
         {
-            string mhtPath = Path.ChangeExtension(zipPath, ".mht");
+            string mhtPath = Path.ChangeExtension(path, ".mht");
             SaveMhtFile(mhtPath, steps, started, stopped);
             return mhtPath;
         }
