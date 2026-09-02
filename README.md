@@ -1,13 +1,14 @@
 # PSR Clone — Problem Steps Recorder replacement
 
-**Version 1.3.0**
+**Version 1.4.0**
 
 A self-contained Windows application that replicates **Problem Steps Recorder / Steps
-Recorder (`psr.exe`)**, which Microsoft has deprecated. Use it to record the exact
-steps you take to reproduce a problem — each user action is captured with an
-annotated screenshot and a plain-language description, then exported either as a
-single self-contained MHTML (`.mht`) report or as a folder of loose files,
-just like `psr.exe`.
+Recorder (`psr.exe`)**, which Microsoft has deprecated, and extends it into a
+**help-guide authoring tool**. Record the exact steps you take — each user action
+is captured with an annotated screenshot and a plain-language description — then
+review the recording in the built-in editor (retitle, rewrite, insert, delete, crop,
+redact) and export a print-ready guide as a single self-contained MHTML (`.mht`)
+file or as a folder of loose files.
 
 It targets the **.NET Framework 4.x runtime that is built into every Windows 10/11
 install**, so there is nothing extra to install and nothing to ship alongside the
@@ -33,7 +34,10 @@ in-box .NET Framework (e.g. Windows **Server Core**), install the Microsoft
 every dependency above is present and working, reports the effective DPI awareness,
 and performs a real capture test on each monitor (see *Troubleshooting*).
 
-## Features (matching psr.exe)
+## Features
+
+Recording works the way `psr.exe` did; the guide editor and print layout are
+additions.
 
 - **Start / Pause / Resume / Stop** recording from a compact always-on-top toolbar.
 - **Automatic step capture** on every user action via global low-level mouse and
@@ -59,22 +63,43 @@ and performs a real capture test on each monitor (see *Troubleshooting*).
   report toggles are **off by default**, so reports stay lean unless you opt in.
   Two things to know before switching them on or off: Additional Details is the only
   place the per-step **program name** is shown, and Recording Environment is the only
-  place the **total step count** is shown.
-- **Output** — on Stop you choose either a single self-contained
-  **`.mht`** (MHTML) report, **or** a **folder dump** of loose files
-  (a browsable `.htm` plus one JPEG per step). Both contain a "Recorded Problem
-  Steps" section with per-step screenshots and the recording session's start/end
-  time, plus whichever optional sections you enabled in Settings, and open in any
-  browser.
+  place the **total step count** is shown. Settings are **not saved between
+  launches**; every start uses the defaults above.
+- **Guide editor** — pressing **Stop** opens a review window before anything is
+  saved. There you can:
+  - give the guide a **title** (rendered as `Guide: {your title}`) and replace the
+    stock "This file contains all of the recorded problem steps…" **description**;
+  - **rewrite any step's text** (multi-line), with a one-click reset to the
+    recorded wording;
+  - **insert text-only steps** between recorded steps for explanations;
+  - **delete** steps that were not needed, and move steps **up/down**;
+  - **crop** a screenshot to the relevant area;
+  - hide sensitive content with a solid **Redact** block (irreversible) or a
+    **Pixelate** mosaic (softer, not for passwords), with undo and **Reset image**.
+  Every image edit is non-destructive until you save, so you can change your mind.
+  Steps are renumbered 1..n on save. **Cancel** discards the recording.
+- **Output** — from the editor you choose either a single self-contained
+  **`.mht`** (MHTML) file, **or** a **folder dump** of loose files (a browsable
+  `.htm` plus one JPEG per step). Both contain the steps with their screenshots and
+  the recording session's start/end time, plus whichever optional sections you
+  enabled in Settings. The `.htm` opens in any browser; the `.mht` opens in
+  Edge, Chrome, Internet Explorer or Word (Firefox does not read MHTML natively).
+  The file name is derived from the guide title (`Guide_Reset_a_password.mht`);
+  with no title it falls back to `RecordedSteps_<timestamp>`.
+- **Print-ready** — the report carries print CSS so that each step's text and its
+  screenshot stay together on one page (`break-inside: avoid`, plus a maximum image
+  height so a full-monitor capture can never be taller than the page). Both the
+  modern and legacy page-break spellings are emitted, so Edge/Chrome and Word
+  honour it. Verified in Edge; Word's rendering of `.mht` has not been checked.
 - **Help** — opens the project page at
-  [github.com/SomeGuru/PSR-Clone](https://github.com/SomeGuru/PSR-Clone).
+  [github.com/DonScott603/HelpGuides](https://github.com/DonScott603/HelpGuides).
 
 ## Build
 
 No SDK required — uses the in-box .NET Framework compiler.
 
 ```powershell
-cd PSRClone
+cd PSR-Clone
 .\build.ps1                 # produces bin\PsrClone.exe (stamped from the VERSION file)
 .\build.ps1 -Run            # build and launch
 .\build.ps1 -SelfTest       # build and run the headless report self-test
@@ -87,26 +112,49 @@ in the GAC, and stamps the version from the **`VERSION`** file into the assembly
 (`FileVersion`/`ProductVersion`) and the in-app `BuildInfo.Version` constant shown
 in the window title and Help dialog. **Bump the version on every change.**
 
+Source is kept to **C# 5** syntax (the in-box compiler is the C# 5 compiler) and
+to **ASCII**: `csc.exe` reads files without a BOM in the system ANSI code page, so
+non-ASCII characters in string literals are written as `\uXXXX` escapes. The
+built `bin\PsrClone.exe` is checked in so the app can be run without building.
+
 ## Use
 
 1. Run `bin\PsrClone.exe`.
-2. Click **Start Record** and reproduce your problem.
+2. Click **Start Record** and perform the steps you want to document. **Pause**
+   suspends capture (for example before typing a password); **Resume** continues.
 3. Optionally click **Add Comment** to annotate a specific spot.
-4. Click **Stop**, then choose the output format: a single **`.mht`**, or a
-   **folder** of loose files (HTML + images).
-5. Share the result; recipients open the `.mht`, or the `.htm` (in the folder),
-   in any browser. The **Help** button opens the project's GitHub page.
+4. Click **Stop**. The guide editor opens: set a title and description, tidy up
+   the step text, insert text steps, delete or reorder steps, and crop / redact /
+   pixelate screenshots. Select a step, pick a tool, then drag on the image.
+5. Click **Save as .mht…** or **Save to folder…** (or **Cancel** to discard the
+   recording).
+6. Share the result; recipients open the `.mht` (Edge, Chrome or Word) or the
+   `.htm` in the folder (any browser), and can print it with each step kept on one
+   page. After saving, the app offers to open the containing folder. The **Help**
+   button opens the project's GitHub page.
+
+Editing happens once, between Stop and Save. A saved guide cannot be reopened in
+the editor; to change it, record again or edit the `.htm` by hand.
 
 ## Verification & diagnostics
 
-- `--check` — verifies every dependency is present, reports the effective DPI
-  awareness, and runs a real capture test on each monitor. Shows a dialog and writes
-  a log; add `--quiet` for headless (exit `0` = healthy). **Run this first on any
-  machine where capture or layout looks wrong.**
-- `--selftest <out.mht>` — builds a synthetic recording and validates the produced
-  MHTML *and* folder dump (embedded JPEGs, loose images, all expected markers).
-  The extension is normalized to `.mht`. Exit code `0` = pass.
-- `--recordtest <out.mht> <log.txt>` — installs the real hooks, synthesizes a click
+`PsrClone.exe` is a windowed application, so these modes print nothing to the
+console; read the **exit code** (and the log file where one is written).
+
+- `--check [log.txt] [--quiet]` (alias `--version`) — verifies every dependency is
+  present, reports the effective DPI awareness, and runs a real capture test on
+  each monitor. Shows a dialog and writes a log; add `--quiet` for headless
+  (exit `0` = healthy). **Run this first on any machine where capture or layout
+  looks wrong.**
+- `--selftest [out.mht]` — builds a synthetic recording and validates the produced
+  MHTML *and* folder dump: embedded and loose JPEG counts, every report marker with
+  the Settings toggles on and off, the guide-editor path (custom title and
+  description, an inserted text step, a deleted step, rewritten step text, a crop
+  with both redaction kinds checked at the pixel level, the print CSS, loose-file
+  image links), and that an untouched guide renders byte-for-byte the same as the
+  classic report. The extension is normalized to `.mht`; the default output is
+  `%TEMP%\psrclone_selftest.mht`. Exit code `0` = pass.
+- `--recordtest [out.mht] [log.txt]` — installs the real hooks, synthesizes a click
   and keystrokes via `SendInput`, and confirms live capture (steps + screenshots +
   UI Automation). Exit code `0` = pass.
 
@@ -138,6 +186,12 @@ PsrClone.exe --check
   include text typed into password-like fields). Pause before typing secrets, or
   disable "Record keyboard input" in Settings. `psr.exe` carried the same warning.
 - Screenshots capture the monitor containing the cursor at the moment of the action.
+- **Redaction:** the solid block is applied to the image pixels before encoding
+  and cannot be undone by the recipient. Pixelation obscures but does not destroy
+  the underlying detail; do not rely on it for passwords or account numbers.
+- **No re-editing:** the editor runs once, between Stop and Save. There is no
+  project file to reopen later.
+- **Settings are per-launch** and revert to defaults each time the app starts.
 
 ## Versioning
 
@@ -148,6 +202,25 @@ it, and record the change under *Changelog*.
 
 ## Changelog
 
+- **1.4.0** — PSR Clone now authors **help guides**, not just problem reports.
+  Stop opens a new **guide editor** in place of the old Yes/No/Cancel save prompt:
+  set a **title** (`Guide: …`) and **description**, **rewrite** any step's text,
+  **insert text-only steps**, **delete** and **reorder** steps, and **crop**,
+  **redact** (solid) or **pixelate** screenshots — all non-destructive until save.
+  The report gains **print CSS** so each step's text and screenshot stay on one
+  page. Output file names derive from the title. Internally: `RecordedStep` gained
+  `CustomDescription`, `Crop` and `Redactions`; `StepKind.Text` is new;
+  `GuideDocument` carries title/intro/steps and `ReportWriter` has overloads for
+  it (the old `IList<RecordedStep>` overloads still work and produce identical
+  output); `ReportWriter.RenderPreview` is shared by the editor and the writer so
+  the preview is exactly what gets saved. `--selftest` now also exercises the
+  editor path (title, text step, delete, crop, both redaction kinds, print CSS) and
+  asserts the default document is byte-identical to the legacy path. Also fixed:
+  starting a second recording no longer leaks the previous run's screenshots, and
+  the **folder dump's images now display** — its `.htm` referenced them with
+  `cid:` URLs, which only resolve inside an `.mht`, so every screenshot showed as
+  a broken image when the loose `.htm` was opened in a browser. The **Help**
+  button now opens this repository (`DonScott603/HelpGuides`).
 - **1.3.0** — three new Settings toggles control what the report contains:
   per-step **date/time stamps**, the **Additional Details** recap, and the
   **Recording Environment** table (machine name, username, OS, screen layout).
@@ -178,7 +251,8 @@ it, and record the change under *Changelog*.
 ## Project layout
 
 ```
-PSRClone/
+PSR-Clone/
+  README.md
   VERSION                   # single source of truth for the version
   build.ps1                 # compiles via in-box csc.exe; stamps version
   src/
@@ -186,15 +260,18 @@ PSRClone/
     MainForm.cs             # recorder toolbar UI
     SettingsForm.cs         # settings dialog
     CommentOverlayForm.cs   # "Add Comment" full-screen overlay
+    GuideEditorForm.cs      # post-recording editor (title, text, insert/delete, crop, redact)
+    GuideDocument.cs        # title + intro + edited step list handed to ReportWriter
     Recorder.cs             # hooks, screenshot capture, UIA, gesture detection
     NativeMethods.cs        # Win32 interop (hooks, key translation, SendInput, DPI)
-    Step.cs                 # recorded-step model + description formatting
+    Step.cs                 # recorded-step model, edit fields, description formatting
     RecorderSettings.cs     # options
-    ReportWriter.cs         # MHTML generation + folder packaging
-    DependencyCheck.cs      # --check environment & dependency diagnostic
-    SelfTest.cs             # headless report validation
-    RecordTest.cs           # live hook/capture validation
-    Version.g.cs            # auto-generated from VERSION by build.ps1
+    ReportWriter.cs         # HTML/MHTML generation, image rendering (crop/redact), print CSS
+    DependencyCheck.cs      # --check / --version environment & dependency diagnostic
+    SelfTest.cs             # --selftest headless report + editor-path validation
+    RecordTest.cs           # --recordtest live hook/capture validation
+    Version.g.cs            # auto-generated from VERSION by build.ps1 (checked in)
     app.manifest            # DPI awareness + asInvoker
-  bin/                      # build output (PsrClone.exe)
+  bin/
+    PsrClone.exe            # build output (checked in); build.ps1 -SelfTest also drops selftest.mht here
 ```
